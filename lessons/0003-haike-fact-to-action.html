@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>第 3 课 · haike 从事实到安全执行</title><link rel="stylesheet" href="../assets/style.css"></head><body>
+<header><div class="wrap nav"><span class="brand">Customer Service · Architecture Lab</span><span><a href="0002-ontocare-dual-ontology.html">← 第 2 课</a>　 <a href="../reference/haike-execution-cheatsheet.html">执行速查 ↗</a></span></div></header>
+<main class="wrap">
+<div class="hero"><div class="eyebrow">Lesson 03 / 04 · 约 12 分钟 · 一条真实代码路径</div><h1>anker-haike：<br>从客户原话到安全建单</h1><p class="intro">OntoCare 已经告诉我们：型号和保修状态决定「哪些动作可能合理」。但客户会改口，工具会超时，按钮会被重复点击。<strong>一个合理的候选方案，为什么仍然不能直接执行？</strong></p><p class="subline">本课唯一目标：沿着事实 → 会话状态 → 授权 → 执行这条链，指出每一层阻止了什么错误，并能自己判断一次提交是否应放行。</p></div>
+<section><h2>1. 一个客户在三轮中改变诉求</h2><p>下面是教学场景，不是从项目日志中复制的真实工单：</p><div class="timeline">
+ <div class="timeline-item"><div class="time-label">TURN 01</div><p><strong>客户：</strong>「S1 Pro 的右边不工作，左边正常。我已经清理过滚刷，没有冒烟。我想换货。」</p></div>
+ <div class="timeline-item"><div class="time-label">TURN 02</div><p><strong>客户：</strong>「等一下，不要换货，我是想退款。」</p></div>
+ <div class="timeline-item"><div class="time-label">TURN 03</div><p><strong>客户：</strong>按下提交后网络超时，于是再次点击。</p></div>
+</div><p>如果用一个模型 Prompt 包办所有步骤，常见错误是：① 丢失「左边正常」和「没有冒烟」里的否定/对象；② 按已经过时的换货方案提交；③ 网络超时后重复创建服务单。</p><div class="primary">本课的设计答案：<strong>事实不能只靠对话摘要，状态不能只放在模型上下文，敏感写入不能只靠模型点头，失败重试不能只靠「再试一次」。</strong></div></section>
+<section><h2>2. 事实账本：记录来源、极性和版本</h2><p>源码阅读路径：<a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/conversation/interpret.py#L66-L79">interpret.py · FactCandidate</a> 定义模型可提出什么事实；<a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/conversation/reduce.py#L257-L405">reduce.py · reduce_turn()</a> 决定哪些事实有原话支持，如何写入与更正。</p>
+<pre class="code">class FactCandidate(BaseModel):
+    kind: Literal["symptom", "observation", "preference", "context", "action_taken"]
+    value: str
+    quote: str  # 本轮客户原话，不能引用助手建议
+    subject: str | None = None
+    polarity: Literal["affirmed", "negated", "uncertain"] = "affirmed"
+
+# reduce_turn() 的关键验证
+if not quoted(candidate.quote, text):
+    continue</pre>
+<p>对于 TURN 01，可以理解为以下概念记录。<strong>这些是帮助理解的数据示意，并非模型运行实录：</strong></p><div class="fact-table"><table><thead><tr><th>原话与主体</th><th>类型</th><th>极性/含义</th></tr></thead><tbody>
+<tr><td>「右边不工作」<small>subject = 右侧</small></td><td><code>symptom</code></td><td><code>affirmed</code> · 当前故障</td></tr>
+<tr><td>「左边正常」<small>subject = 左侧</small></td><td><code>observation</code></td><td><code>affirmed</code> · 正常观察</td></tr>
+<tr><td>「已经清理过滚刷」<small>subject = 滚刷</small></td><td><code>action_taken</code></td><td><code>affirmed</code> · 已做步骤</td></tr>
+<tr><td>「没有冒烟」<small>subject = 设备</small></td><td><code>symptom</code> 或其他事实类型，视抽取结果</td><td><code>negated</code> · 不能当作「正在冒烟」</td></tr>
+</tbody></table></div>
+<p>代码中保存的事实还有 <code>source_entry_ids</code>、<code>quote</code>、<code>revision</code>、<code>status</code> 和 <code>supersedes</code>。当客户明确纠正原话时，旧事实会被标记为 <code>superseded</code> 或 <code>retracted</code>，而不是被无声覆盖。<a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/conversation/reduce.py#L257-L345">见更正与新事实写入</a>。</p>
+<div class="note"><strong>本体论连接点：</strong>本体定义 <code>Issue</code>、<code>Fact</code>、<code>Product</code> 是什么、如何关联；事实账本记录「这个具体 Issue 中，有谁在何时说了哪句话」。本体是类型和关系，事实账本是有出处、可演进的实例数据。</div></section>
+<section><h2>3. LangGraph：运行步骤，而不是定义业务世界</h2><p>在 <a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/sessions/graph.py#L3314-L3451">sessions/graph.py · build_graph()</a> 中，能看到真实的 <code>StateGraph(SessionState)</code>、<code>add_node</code>、<code>add_conditional_edges</code> 和 <code>compile(checkpointer=...)</code>。</p>
+<figure class="figure"><div class="node source"><b>START → understand</b><small>解析本轮消息、意图和事实</small></div><div class="arrow">↓ 依据业务状态选择分支</div><div class="branch"><div class="node"><b>disambiguate</b><small>澄清产品或对象</small></div><div class="node"><b>service_context</b><small>查询订单和售后条件</small></div></div><div class="arrow">↓ 视分支进入其他节点</div><div class="branch"><div class="node"><b>retrieve → guide</b><small>取证并推进排障</small></div><div class="node"><b>propose → authorize</b><small>候选方案与授权检查</small></div></div><div class="arrow">↓</div><div class="node"><b>await_input 或 execute</b><small>等待客户确认／提交已获授权的动作</small></div><div class="arrow">↓</div><div class="node"><b>commit_issue → END</b><small>持久化本轮结果，进入下一轮</small></div><figcaption>教学用的简化路径示意，并非固定执行顺序。实际代码还有 vision、reassess、escalate、advance_tasks、apply_action 等分支。</figcaption></figure>
+<p>一个非常容易记错的点：源码第一行文档注明<strong>「每轮从 START 到 END；卡片等待保存在问题状态中，不依赖跨轮图中断」</strong>。因此客户下一轮回复时，服务端根据已经保存的 <code>pending_card</code>、<code>issues</code>、<code>stage</code> 和版本继续处理。</p>
+<p>如果客户在 TURN 02 改口，系统不能把旧卡片或候选方案视作永久有效。<a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/conversation/reduce.py#L373-L395">reduce.py</a> 甚至会在某些事实依据变化时撤销现有待答卡片，防止基于旧前提继续推进。</p></section>
+<section><h2>4. 授权闸门：五个条件必须全部通过</h2><p>haike 的 <a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/gate.py">AuthorizationGate.check()</a> 不只接收「模型认为可以」，而是逐项核验：</p><table><thead><tr><th>检查</th><th>实际保护的边界</th></tr></thead><tbody>
+<tr><td><code>eligibility</code></td><td>换货/退款须确认在保；物流类动作须满足对应物流条件</td></tr>
+<tr><td><code>evidence</code></td><td>换货/退款必须提供订单/凭证、地址、故障照片/视频、SN，且客户确认</td></tr>
+<tr><td><code>safety</code></td><td>存在未解除的 R4 设备安全风险或禁止操作时不提交</td></tr>
+<tr><td><code>idempotency</code></td><td>案件处于可提交状态，且相同动作未在运行或已经成功</td></tr>
+<tr><td><code>review</code></td><td>独立核对客户诉求、故障及产品；有冲突则不放行</td></tr>
+</tbody></table>
+<p><a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/review.py">review.py</a> 为换货/退款准备独立审查：<code>messages(case)</code> 只把客户原话和订单商品行发给审查模型，而不把主流程判断的结论灌进去。审查输出再与候选方案比对，并核验引用片段是否真出现在原话中。</p><div class="note"><strong>精确边界：</strong>独立审查并非在任何运行模式下都启用。源码在 LLM 全局关闭或已获人工批准时有特定放行分支；规则闸门的其他检查仍在。其作用是降低错误风险，不是数学意义的零错误保证。</div></section>
+<section><h2>5. 亲自试一试：授权决策模拟器</h2><p>这是一个<strong>脱离后端的教学模拟器</strong>，复现 <code>gate.py</code> 的五项布尔逻辑。它不会执行任何建单、退款或数据写入。注意：在真实系统中 <code>review</code> 来自独立审查结果，这里仅用复选框代替。</p>
+<div class="sim gate-lab" id="gate-lab"><h3>交互实验 · Gate 判定</h3><div class="gate-presets"><button type="button" data-preset="missing">资料缺失</button><button type="button" data-preset="ok">条件齐全</button><button type="button" data-preset="switch">客户改口</button><button type="button" data-preset="timeout">动作执行中</button></div>
+<div class="sim-controls"><label>服务动作<select name="kind"><option value="replace">换货 replace</option><option value="refund">退款 refund</option><option value="reship">补发 reship</option><option value="carrier_investigation">承运商调查 carrier_investigation</option></select></label><label>质保状态<select name="warranty"><option value="in_warranty">在保 in_warranty</option><option value="out_of_warranty">过保 out_of_warranty</option><option value="unknown">未知 unknown</option></select></label><label>案件状态<select name="case_status"><option value="approved">approved</option><option value="awaiting_confirmation">awaiting_confirmation</option><option value="executing_failed">executing_failed</option><option value="waiting_info">waiting_info</option></select></label><label>同键执行状态<select name="execution_status"><option value="none">无记录 none</option><option value="running">正在执行 running</option><option value="succeeded">已成功 succeeded</option><option value="failed">曾失败 failed</option></select></label></div>
+<div class="sim-subheading">必要材料 / 客户确认</div><div class="sim-controls"><label class="checkbox-inline"><input name="order_or_receipt" type="checkbox"> 订单号或购买凭证</label><label class="checkbox-inline"><input name="address" type="checkbox"> 收货地址</label><label class="checkbox-inline"><input name="photo_or_video" type="checkbox"> 故障照片或视频</label><label class="checkbox-inline"><input name="serial_number" type="checkbox"> 产品 SN</label><label class="checkbox-inline"><input name="user_confirmed" type="checkbox"> 客户已经确认提交</label><label class="checkbox-inline"><input name="logistics_ok" type="checkbox"> 物流类资格满足（供补发/调查使用）</label></div>
+<div class="sim-subheading">安全 / 审查</div><div class="sim-controls"><label class="checkbox-inline"><input name="allowed_operations" type="checkbox"> 当前操作被允许</label><label class="checkbox-inline"><input name="reported_risk" type="checkbox"> 存在尚未解除的 R4 风险</label><label class="checkbox-inline"><input name="review_pass" type="checkbox"> 独立审查通过（模拟）</label></div>
+<div class="sim-result" id="gate-result" aria-live="polite">正在初始化教学规则……</div></div>
+<p>依次点击<strong>「条件齐全」→「客户改口」→「动作执行中」</strong>。观察为什么只改一个输入，整体结果就会从放行变为拒绝。真实实现用 <code>all(c.passed for c in checks)</code> 汇总五项检查。</p></section>
+<section><h2>6. 幂等：防止「请求成功了，但回答丢了」</h2><p>在 <a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/executor.py">executor.py</a> 中，每次执行带 <code>idempotency_key</code>；<a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/store.py">store.py</a> 会拒绝用相同幂等键发送不同请求。</p><pre class="code"># executor.py 中 _create_once() 的关键流程（节选）
+if attempt &gt; 1:
+    found = await self.backend.find_service_order(client_ref)
+    if found:
+        return found
+return await self.backend.create_service_order(
+    ServiceOrderRequest(**params, client_ref=client_ref)
+)</pre><p>含义：上次超时也许只是响应没送达，不能立即再创建一次。先按请求标识查询已经存在的服务单；如果结果无法核实，源码会走人工核查路径。</p><div class="note"><strong>不要过度承诺：</strong>这不等于任何系统都能保证 exactly-once。效果还取决于外部售后后端是否支持可靠的请求标识、幂等与查询。仓库也明确承认跨会话同订单去重仍有边界。</div></section>
+<section><h2>7. 和上一课的本体论怎么连接？</h2><div class="comparison"><article><h3>OntoCare</h3><p><strong>关系与规则：</strong>Product 对应什么 PN？知识是否属于该型号？在当前保修、经销商和排障状态下，允许准备什么动作？</p></article><article><h3>haike</h3><p><strong>状态与执行：</strong>事实有没有原话支持？旧信息是否被更正？用户现在要退款还是换货？是否已确认材料？重复提交是否安全？</p></article></div><p><strong>真正可复用的设计原则：</strong>把「领域关系」、「有出处的事实」、「流程状态」、「动作策略」、「真正的执行」设计成相互连接但权责清晰的层，不让一个 LLM Prompt 同时承担全部责任。</p></section>
+<section><h2>8. 三道理解检查</h2>
+<div class="quiz" data-quiz data-correct="A" data-explanation="否定事实仍有价值：它用于证据和安全判断，但不能作为肯定的故障症状。"><h3>练习 1 · 事实极性</h3><p>客户说「没有冒烟」，这条信息应该如何处理？</p><div class="choices"><button type="button" data-choice="A">保留否定事实</button><button type="button" data-choice="B">加入故障现象</button><button type="button" data-choice="C">删除全部记录</button></div><div class="answer" role="status" aria-live="polite"></div></div>
+<div class="quiz" data-quiz data-correct="C" data-explanation="独立审查需要以客户现有原话为准；如果候选换货和退款诉求不一致，旧候选不能通过审查。"><h3>练习 2 · 客户改口</h3><p>模型提出换货，客户随后明确说要退款。下一步是什么？</p><div class="choices"><button type="button" data-choice="A">继续旧的方案</button><button type="button" data-choice="B">跳过业务校验</button><button type="button" data-choice="C">重审新的诉求</button></div><div class="answer" role="status" aria-live="polite"></div></div>
+<div class="quiz" data-quiz data-correct="B" data-explanation="响应超时不意味着后端没有成功。应先按相同请求标识查询已有服务单，无法核实则交人工。"><h3>练习 3 · 重复提交</h3><p>创建服务单后接口超时，准备重试时应该优先做什么？</p><div class="choices"><button type="button" data-choice="A">立刻重复创建</button><button type="button" data-choice="B">先查询旧结果</button><button type="button" data-choice="C">更换订单编号</button></div><div class="answer" role="status" aria-live="polite"></div></div>
+<div class="reflection"><strong>主动回忆 · 用你自己的话解释</strong><p>请回答：「为什么在 OntoCare 中 <code>allowed_actions()</code> 给出候选动作之后，仍然需要 haike 风格的 <code>AuthorizationGate</code>？」试着用一个用户改口或重复提交的例子。</p><button type="button" class="reveal" data-reveal="layer-answer">查看参考解答</button><p id="layer-answer" hidden>候选动作只是满足部分业务状态的决策，它可能随客户新消息、证据变化而过时。真正执行前必须重新核对当前事实、用户确认、资料、安全限制、独立审查、案件状态和幂等记录。这样系统不会把过时的建议直接变成有副作用的操作。</p></div></section>
+<section><h2>9. 今天只读这四份源码</h2><ol class="sources"><li><a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/conversation/reduce.py#L257-L405">事实更正及更新 · reduce.py</a> —— 从候选事实到可追踪的状态。</li><li><a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/sessions/graph.py#L3314-L3451">build_graph() · graph.py</a> —— 节点、路由、结束与检查点。</li><li><a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/review.py#L104-L255">独立审查 · review.py</a> —— 如何核对原话与方案。</li><li><a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/executor.py">执行器 · executor.py</a> —— 幂等标识、先查后建和未知结果。</li></ol><p class="subline">不需要一次读完几千行 graph.py。先只读 <code>SessionState</code> 重要字段与 <code>build_graph()</code>，然后用本课的场景解释它们。任何不清楚的地方都可以继续问我。</p></section>
+<div class="next"><div><strong>下一课 · 第 4 课：合并思想，设计你自己的客服业务内核</strong><br>从 Product / Issue / Fact / Evidence / Action 的本体到 NestJS + Agent 的清晰模块边界。</div><a href="../reference/haike-execution-cheatsheet.html">本课速查 →</a></div>
+</main><footer class="footer"><div class="wrap">AI Customer Service Architecture Lab · Lesson 03 · Source-based teaching · Simulation only</div></footer>
+<script src="../assets/quiz.js" defer></script><script src="../assets/gate-simulator.js" defer></script>
+</body></html>

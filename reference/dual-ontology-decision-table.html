@@ -1,0 +1,22 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>双本体与动作规则速查</title><link rel="stylesheet" href="../assets/style.css"></head><body>
+<header><div class="wrap nav"><span class="brand">Quick Reference · 02</span><a href="../lessons/0002-ontocare-dual-ontology.html">← 返回第 2 课</a></div></header>
+<main class="wrap"><div class="hero"><div class="eyebrow">Print-friendly Reference</div><h1>OntoCare 双本体<br>与候选动作决策表</h1><p class="intro">先确定对象与适用知识，再决定动作是否允许。<strong>准备审核 ≠ 真正办理。</strong></p></div>
+<section><h2>最小服务本体</h2><table><thead><tr><th>对象 / 关系</th><th>目的</th><th>程序体现</th></tr></thead><tbody>
+<tr><td>Product（PN）</td><td>唯一识别型号；同名不代表同产品</td><td><code>dataset.py</code> 品类与别名</td></tr>
+<tr><td>Order → OrderItem</td><td>一个订单可能有多条商品行</td><td><code>dataset.py</code> items；<code>lookup_order</code> 选择 SKU</td></tr>
+<tr><td>Knowledge → appliesTo → Product</td><td>知识只适用于某些 PN</td><td><code>qa_workflows.py</code> PN 过滤、发布状态</td></tr>
+<tr><td>Evidence → supports → Claim</td><td>客户原话与业务记录不可混同</td><td><code>grounded_response.py</code> 引用、字段与承诺检查</td></tr>
+<tr><td>Seller + Country → DealerStatus</td><td>确定授权渠道候选</td><td><code>match_dealer()</code> 目录查询</td></tr>
+</tbody></table></section>
+<section><h2>OntoCare allowed_actions() 分支</h2><table><thead><tr><th>条件</th><th>关键允许动作</th><th>禁止 / 注意</th></tr></thead><tbody>
+<tr><td>product 缺失</td><td>ask_product、search_knowledge</td><td>不允许 propose_replacement 或 direct_refund</td></tr>
+<tr><td>产品已知，warranty UNKNOWN / PENDING_RECHECK</td><td>ask_country、ask_seller、request_proof</td><td>不能 tell_expired；未知不等于过保</td></tr>
+<tr><td>warranty EXPIRED</td><td>propose_paid_repair</td><td>不能建议直接换货或退款</td></tr>
+<tr><td>warranty VALID，ts FAILED，dealer AUTHORIZED</td><td>prepare_replacement_review</td><td>仅准备审核材料，不是已经换货</td></tr>
+<tr><td>warranty VALID，within_30d，dealer AUTHORIZED</td><td>prepare_return_review</td><td>必须人工核查退货资格；不是直接退款</td></tr>
+<tr><td>warranty VALID，dealer NOT_AUTHORIZED</td><td>guide_contact_seller</td><td>不能将未授权渠道当作官方质保</td></tr>
+</tbody></table><p class="note"><strong>源码细节：</strong><code>USER_REPORTED_FAILED</code> 不等于 <code>FAILED</code>。前者是客户反馈，后者才满足 <code>prepare_replacement_review</code> 的这一项源码条件。此外，规则中 <code>direct_refund</code> 始终被禁止，项目未接真实退款执行器。</p></section>
+<section><h2>与 haike 的连接</h2><div class="primary"><p><strong>候选动作空间：</strong>产品 / 保修 / 渠道 / 排障状态 → Allowed / Forbidden。</p><p><strong>授权闸门：</strong>eligibility + evidence + safety + idempotency + review → 允许提交服务单或人工处理。</p></div><p>这两层是设计思想上的联系，并非两个仓库已经互相调用。haike 提交的是赛题服务单，提交后仍有人工接续，不等同真实退款履约。</p></section>
+<section><h2>可复用的设计原则</h2><ol><li>先定义产品 PN、订单商品行、知识来源和证据版本，再考虑向量检索。</li><li>不要将未知状态强行变成真或假；未知应该触发澄清或人工核查。</li><li>将客户陈述与已核实事实分开，把“想退货”与“已批准退款”分开。</li><li>从已知状态计算候选动作，敏感写入再经过独立授权与幂等校验。</li></ol></section>
+<p class="sources">一手资料：<a href="https://github.com/hyperMoss/anker-OntoCare/blob/main/OntoCare/app.py#L159-L287">OntoCare/app.py L159–287</a> · <a href="https://github.com/hyperMoss/anker-OntoCare/blob/main/OntoCare/qa_workflows.py">OntoCare/qa_workflows.py</a> · <a href="https://github.com/hyperMoss/anker-haike/blob/main/orchestrator/app/actions/gate.py">haike/actions/gate.py</a>。</p>
+</main><footer class="footer"><div class="wrap">AI Customer Service Architecture Lab · Reference 02</div></footer></body></html>

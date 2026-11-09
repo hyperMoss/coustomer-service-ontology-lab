@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="从 OntoCare 双本体到 haike 的可靠执行：三课可交互的客服系统架构实验室。">
+  <title>Customer Service Ontology Lab · 客服本体与 Agent 架构实验室</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+  .home-hero{padding:75px 0 40px}.home-hero .intro{max-width:760px}.home-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:32px 0}.home-stat{padding:20px;border:1px solid var(--line);background:var(--white);border-radius:14px}.home-stat b{display:block;font-size:28px;letter-spacing:-.03em;line-height:1.2;color:var(--blue)}.home-stat span{font-size:13px;color:var(--muted)}.home-cards{display:grid;gap:15px}.home-card{background:var(--white);border:1px solid var(--line);border-radius:18px;padding:24px;display:grid;grid-template-columns:70px 1fr;gap:20px}.home-card .num{display:grid;place-items:center;font-weight:800;font-size:25px;background:#e8f1f8;color:var(--blue);border-radius:12px;min-height:68px}.home-card h3{margin:0 0 8px}.home-card p{margin:8px 0;color:#516074;font-size:14px}.home-card a{font-weight:750}.home-links{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}.home-links a{display:inline-block;padding:10px 15px;border-radius:9px;border:1px solid #cbd5df;background:#fff;text-decoration:none;font-size:14px}.home-links a:hover{background:#e8f1f8}.home-list{margin:10px 0;padding-left:22px}.home-list li{margin-bottom:10px}.term{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#234f75}.home-note{background:#f1f5f8;padding:22px;border-radius:14px;border-left:4px solid var(--blue)}@media(max-width:650px){.home-hero{padding:42px 0 26px}.home-stats{grid-template-columns:1fr 1fr}.home-card{grid-template-columns:50px 1fr;padding:18px;gap:12px}.home-card .num{font-size:18px;min-height:50px}}
+  </style>
+</head>
+<body>
+<header><div class="wrap nav"><span class="brand">Customer Service · Ontology Lab</span><span><a href="MISSION.md">学习目标</a>　 <a href="RESOURCES.md">一手资料</a>　 <a href="https://github.com/hyperMoss/customer-service-ontology-lab">GitHub</a></span></div></header>
+<main class="wrap">
+  <div class="home-hero">
+    <div class="eyebrow">SOURCE-DRIVEN LEARNING · INTERACTIVE ENGINEERING COURSE</div>
+    <h1>理解业务本体，<br>构建可信的 AI 客服。</h1>
+    <p class="intro">沿着两个真实开源项目学习：<strong>OntoCare</strong> 用业务实体、关系和规则消除歧义；<strong>anker-haike</strong> 用事实账本、状态机和授权闸门，让售后动作可追溯、可审查。</p>
+    <p class="subline">这是独立教学项目，不是 Anker 官方产品，也不进行任何真实客服办理。</p>
+    <div class="home-stats"><div class="home-stat"><b>03</b><span>互动课程</span></div><div class="home-stat"><b>03</b><span>概念速查表</span></div><div class="home-stat"><b>12+</b><span>自动化安全测试</span></div></div>
+  </div>
+  <section>
+    <h2>按顺序学习</h2>
+    <div class="home-cards">
+      <article class="home-card"><div class="num">01</div><div><h3>从 S1 Pro 认识本体论</h3><p>同一个商品名指向两个不同 PN，为什么 RAG 不能只靠相似度？建立类、实例、关系和约束的最小认知。</p><a href="lessons/0001-ontology-through-s1-pro.html">阅读课程与练习 →</a></div></article>
+      <article class="home-card"><div class="num">02</div><div><h3>OntoCare：Service × Decision Ontology</h3><p>从 <span class="term">resolve_product()</span> 到 <span class="term">allowed_actions()</span>，用决策模拟器切换产品、质保、渠道与排障状态。</p><a href="lessons/0002-ontocare-dual-ontology.html">进入双本体实验 →</a></div></article>
+      <article class="home-card"><div class="num">03</div><div><h3>haike：事实账本 → 状态机 → 安全执行</h3><p>跟随客户改口与重复点击的案例，理解事实来源、LangGraph、独立审查、五项门控与幂等键。</p><a href="lessons/0003-haike-fact-to-action.html">进入授权实验 →</a></div></article>
+    </div>
+  </section>
+  <section>
+    <h2>从阅读源码走向亲自动手</h2>
+    <p>课件之外，这个仓库附带没有外部依赖的 Node.js 教学内核。通过测试体验本体、规则、事实和执行之间的职责边界。</p>
+    <pre class="code">npm test
+npm run demo
+npm run serve</pre>
+    <p class="subline">Node.js ≥ 20；代码中的设备与工单均为合成教学示例。运行演示不会请求网络或创建真实服务单。</p>
+    <div class="home-links"><a href="reference/ontology-cheatsheet.html">本体概念速查</a><a href="reference/dual-ontology-decision-table.html">决策本体速查</a><a href="reference/haike-execution-cheatsheet.html">安全执行速查</a><a href="https://github.com/hyperMoss/anker-haike">haike 源码</a><a href="https://github.com/hyperMoss/anker-OntoCare">OntoCare 源码</a></div>
+  </section>
+  <section><h2>接下来</h2><div class="home-note">第 4 课将把 <strong>Product / Order / Issue / Fact / Evidence / Action</strong> 合成为一个可扩展的业务内核，并映射到 <strong>NestJS + Hono/Mastra</strong> 的模块边界。在此之前，先用前三课的模拟器回答“这个动作为什么会被拒绝”。</div></section>
+</main>
+<footer class="footer"><div class="wrap">Original educational materials · MIT · Source attribution inside each lesson</div></footer>
+</body>
+</html>
